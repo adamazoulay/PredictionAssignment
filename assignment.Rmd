@@ -1,0 +1,79 @@
+---
+title: "PredictionAssignment"
+author: "Adam Azoulay"
+date: "November 13, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+We use a bagged tree model to fit a data set of excercise data, and estimate the activity type associated with that observation. We find the first model we try gives us >99% accuracy on the testing set.
+
+## Setup
+
+Here we load the training and testing data sets from the .csv files.
+
+```{r}
+data <- read.csv("pml-training.csv", na.strings = c("NA","","#DIV/0!"))
+quiz <- read.csv("pml-testing.csv", na.strings = c("NA","","#DIV/0!"))
+```
+
+Let's quickly take a look at the variable we are trying to predict. 
+
+```{r}
+str(data$classe)
+```
+
+So we can see that it is a factor variable with 5 levels, each level corrisponding to a different manner of exercise. These levels are sitting-down, standing-up, standing, walking, and sitting, according to the data documentation [here](http://groupware.les.inf.puc-rio.br/har).
+
+Now we need to deal with the NA values. Let's remove all the columns that are mostly NA values. *colinear*
+```{r}
+library(dplyr)
+library(caret)
+clean.data <- data[, colSums(is.na(data)) == 0] 
+clean.quiz <- quiz[, colSums(is.na(quiz)) == 0] 
+
+num.data <- clean.data[, -c(1, 2, 5, 6, 60)]
+corr <- cor(num.data)
+hc <- findCorrelation(corr, cutoff=0.3)
+hc <- sort(hc)
+reduced.data <- num.data[, -c(hc)]
+
+# Add back in the factor cols
+clean.data <- cbind(reduced.data, classe=clean.data[, 60])
+```
+
+Now that we have cleaned the data set, we should split the data into training and testing sets.
+
+```{r}
+inTrain <- createDataPartition(y = clean.data$classe, p = .8, list = FALSE)
+testing <- clean.data[-inTrain, ]
+training <- clean.data[inTrain, ]
+```
+
+Now we can move on to the analysis.
+
+## Analysis
+
+We need to set out finding a model to predict our data. Let's use the ensemble library and build up, adding one model at a time as needed. We can check the accuracy of the model after each train run and see how we did until we are satisfied. Any accuracy above 95% is acceptable for our model.
+
+Our first model will be a tree model with bagging. This averages the model out over many different "bagged" subsets of data and combines the final result, usually with good results.
+
+```{r cache=TRUE}
+fit <- train(classe ~ ., data = training, method="treebag")
+test.pred <- predict(fit, testing)
+confusionMatrix(as.factor(test.pred), testing$classe)
+```
+
+Surprisingly, we can see that we have an extremely accurate model, with accuracy of ~99.5% on the testing set. This means we can use the single model for our predictions, and we can say that any out-of-set data will have a very high accuracy for prediction, close to 100%.
+
+Finally, let's run the model on the quiz set and get the answers for the questions.
+
+```{r}
+quiz.pred <- predict(fit, quiz)
+quiz.pred
+```
